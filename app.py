@@ -1,11 +1,13 @@
 """ WebProxyConfigurer App """
 
+import csv
+import io
+from functools import reduce
+
 from flask import Flask, request
 
 import requests
-import csv, io
 
-from functools import reduce
 
 app = Flask(__name__)
 
@@ -17,6 +19,12 @@ def status():
 
 
 def get_proxies(country=None, timeout=500):
+    """
+    Scrape proxies from the internet and return them in a list
+    :param country:
+    :param timeout:
+    :return:
+    """
     country_fragment = f"&country={country}" if country else ""
 
     url = f"https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&proxy_format=ipport&format=text&timeout={timeout}&protocol=socks5{country_fragment}"
@@ -44,11 +52,11 @@ def proxies():
         map(lambda h: f"shExpMatch(host, '{h}')", whitelist)
     ) if whitelist else None
 
-    proxies = get_proxies(country=country, timeout=timeout)
+    proxy_list = get_proxies(country=country, timeout=timeout)
 
     proxyexpr = "'" + reduce(
         lambda a, b: a + "; " + b,
-        map(lambda p: f"SOCKS5 {p[0]}", proxies[:count])
+        map(lambda p: f"SOCKS5 {p[0]}", proxy_list[:count])
     ) + "'"
 
     if whitelist_expr:
