@@ -38,7 +38,7 @@ def get_proxies(country=None, timeout=500):
     buffer = io.StringIO(text)
 
     reader = csv.reader(buffer)
-    return [row for row in reader]
+    return list(reader)
 
 @app.route('/proxies', methods=['get'])
 def proxies():
@@ -54,15 +54,15 @@ def proxies():
 
     proxy_list = get_proxies(country=country, timeout=timeout)
 
-    proxyexpr = "'" + reduce(
+    proxy_expr = "'" + reduce(
         lambda a, b: a + "; " + b,
         map(lambda p: f"SOCKS5 {p[0]}", proxy_list[:count])
     ) + "'"
 
     if whitelist_expr:
-        return "function FindProxyForURL(url, host) { if ( " + whitelist_expr + " ) { return " + proxyexpr +" ; } return 'DIRECT'; }"
+        return "function FindProxyForURL(url, host) { if ( " + whitelist_expr + " ) { return " + proxy_expr +" ; } return 'DIRECT'; }"
     else:
-        return "function FindProxyForURL(url, host) { return " + proxyexpr +" ; }"
+        return "function FindProxyForURL(url, host) { return " + proxy_expr +" ; }"
 
 
 if __name__ == '__main__':
