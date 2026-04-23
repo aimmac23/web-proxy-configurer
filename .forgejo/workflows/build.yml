@@ -1,0 +1,94 @@
+name: ci
+
+on:
+  push:
+    branches: master
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        arch: ["arm64"]
+    runs-on: docker-${{ matrix.arch }}
+    container:
+      image: docker.aimmac23.com/aim/conan-cpp-builder:latest
+      credentials:
+        username: ${{ secrets.REGISTRY_USERNAME }}
+        password: ${{ secrets.REGISTRY_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: podman login -u ${{ vars.REGISTRY_USERNAME  }} -p ${{ secrets.REGISTRY_SECRET  }} docker.aimmac23.com
+      - run: ./run-pytest.sh
+      - run: ./build-pyinstaller.sh
+      - run: podman build  -t docker.aimmac23.com/aim/web-proxy-configurer-${{ matrix.arch }} .
+      - run: podman push docker.aimmac23.com/aim/web-proxy-configurer-${{ matrix.arch }}
+
+  multiarch:
+    runs-on: docker
+    needs:
+      - build
+    container:
+      image: docker.aimmac23.com/aim/base-builder:latest
+      credentials:
+        username: ${{ secrets.REGISTRY_USERNAME }}
+        password: ${{ secrets.REGISTRY_SECRET }}
+    steps:
+      - run: podman login -u ${{ vars.REGISTRY_USERNAME  }} -p ${{ secrets.REGISTRY_SECRET  }} docker.aimmac23.com
+      - run: podman pull docker.aimmac23.com/aim/web-proxy-configurer-arm64
+      - run: podman manifest create docker.aimmac23.com/aim/web-proxy-configurer --amend docker.aimmac23.com/aim/web-proxy-configurer-arm64
+      - run: podman manifest push docker.aimmac23.com/aim/web-proxy-configurer
+
+  restart:
+    needs: [ multiarch ]
+    runs-on: docker
+    container:
+      image: docker.aimmac23.com/aim/base-builder:latest
+      credentials:
+        username: ${{ secrets.REGISTRY_USERNAME }}
+        password: ${{ secrets.REGISTRY_SECRET }}
+    steps:
+      - uses: https://github.com/azure/k8s-set-context@v4
+        with:
+          method: kubeconfig
+          kubeconfig: "${{ secrets.MEDIA_DEPLOYER_KUBECONFIG }}"
+          kubeconfig-encoding: base64
+
+      - run: kubectl rollout restart deployment/web-proxy-configurer
+
+  pylint:
+    runs-on: docker
+    container:
+      image: docker.aimmac23.com/aim/conan-cpp-builder:latest
+      credentials:
+        username: ${{ secrets.REGISTRY_USERNAME }}
+        password: ${{ secrets.REGISTRY_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./run-pylint.sh
+
+  trivy:
+    needs:
+      - build
+    runs-on: docker-arm64
+    container:
+      image: docker.io/aquasec/trivy
+      env:
+        TRIVY_PASSWORD: ${{ secrets.REGISTRY_SECRET }}
+        TRIVY_DISABLE_VEX_NOTICE: true
+    steps:
+      - run: trivy image docker.aimmac23.com/aim/web-proxy-configurer-arm64 --username ${{ secrets.REGISTRY_USERNAME }}
+
+  sonarqube:
+    runs-on: docker
+    container:
+      image: docker.aimmac23.com/aim/base-builder:latest
+      credentials:
+        username: ${{ secrets.REGISTRY_USERNAME }}
+        password: ${{ secrets.REGISTRY_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: SonarQube Scan
+        uses: https://github.com/SonarSource/sonarqube-scan-action@v7.1.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: http://sonarqube.services.aimmac23.com
