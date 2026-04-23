@@ -12,7 +12,7 @@ import requests
 app = Flask(__name__)
 
 
-@app.route('/status')
+@app.route('/status', methods=['get'])
 def status():
     """ Status check for Kubernetes"""
     return 'OK'
@@ -27,7 +27,8 @@ def get_proxies(country=None, timeout=500):
     """
     country_fragment = f"&country={country}" if country else ""
 
-    url = f"https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&proxy_format=ipport&format=text&timeout={timeout}&protocol=socks5{country_fragment}"
+    url = (f"https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&proxy_format=ipport&format=text"
+           f"&timeout={timeout}&protocol=socks5{country_fragment}")
     response = requests.get(url, timeout=10)
     response.raise_for_status()  # Raise an error for HTTP 4xx/5xx responses
 
@@ -49,18 +50,19 @@ def proxies():
 
     whitelist_expr = reduce(
         lambda a, b: a + " || " + b,
-        map(lambda h: f"shExpMatch(host, '{h}')", whitelist)
+        [f"shExpMatch(host, '{h}')" for h in whitelist]
     ) if whitelist else None
 
     proxy_list = get_proxies(country=country, timeout=timeout)
 
     proxy_expr = "'" + reduce(
         lambda a, b: a + "; " + b,
-        map(lambda p: f"SOCKS5 {p[0]}", proxy_list[:count])
+        [f"SOCKS5 {p[0]}" for p in proxy_list[:count]]
     ) + "'"
 
     if whitelist_expr:
-        return "function FindProxyForURL(url, host) { if ( " + whitelist_expr + " ) { return " + proxy_expr +" ; } return 'DIRECT'; }"
+        return ("function FindProxyForURL(url, host) { if ( " + whitelist_expr + " ) { return " + proxy_expr +
+                " ; } return 'DIRECT'; }")
     else:
         return "function FindProxyForURL(url, host) { return " + proxy_expr +" ; }"
 
